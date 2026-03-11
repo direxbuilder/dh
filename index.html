@@ -123,14 +123,16 @@
     });
 
     // ── Callback do GIS ───────────────────────────────────────
+
     function handleCredential(response) {
       if (!response || !response.credential) {
         showError('Login cancelado. Tente novamente.');
         return;
       }
-      hideError();
-      // Token no src do iframe — nunca aparece na barra do browser
-      frame.src = GAS_APP_URL + '?gtoken=' + encodeURIComponent(response.credential);
+      var iframe = document.createElement('iframe');
+      iframe.src = GAS_APP_URL + '?gtoken=' + encodeURIComponent(response.credential);
+      iframe.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;border:none;z-index:9999;';
+      document.body.appendChild(iframe);
     }
 
     // ── Inicializa GIS ────────────────────────────────────────
