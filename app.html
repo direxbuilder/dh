@@ -1,1 +1,229 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeliveryHub</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; overflow: hidden; background: #f8f9fa; }
 
+    /* ── iframe do app GAS ─────────────────────────────────── */
+    #app-frame {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+    }
+
+    /* ── Overlay de login ──────────────────────────────────── */
+    #login-overlay {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(135deg, #FF6B35 0%, #c0392b 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      opacity: 1;
+      transition: opacity 0.35s ease;
+    }
+    #login-overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .login-card {
+      background: #fff;
+      border-radius: 1.25rem;
+      padding: 2.5rem 2rem;
+      width: 100%;
+      max-width: 380px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+      text-align: center;
+    }
+    .login-logo    { font-size: 3rem; margin-bottom: 0.5rem; }
+    .login-title   { font-weight: 700; font-size: 1.4rem; margin-bottom: 0.25rem; color: #212529; }
+    .login-subtitle{ color: #6c757d; font-size: 0.9rem; margin-bottom: 1.75rem; }
+    .divider       { border-top: 1px solid #e9ecef; margin: 1.5rem 0; }
+
+    #gis-button-wrap {
+      display: flex;
+      justify-content: center;
+      min-height: 44px;
+    }
+
+    #gis-loader {
+      color: #6c757d;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid #dee2e6;
+      border-top-color: #6c757d;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #login-error {
+      display: none;
+      margin-top: 1rem;
+      padding: 0.5rem 0.75rem;
+      background: #f8d7da;
+      color: #842029;
+      border-radius: 0.5rem;
+      font-size: 0.85rem;
+    }
+
+    .login-footer {
+      margin-top: 1.5rem;
+      font-size: 0.7rem;
+      color: #adb5bd;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Overlay de login (visível até GAS sinalizar login-success) ── -->
+  <div id="login-overlay">
+    <div class="login-card">
+      <div class="login-logo">🛵</div>
+      <div class="login-title">DeliveryHub</div>
+      <div class="login-subtitle">Faça login para continuar</div>
+      <div class="divider"></div>
+      <div id="gis-button-wrap">
+        <div id="gis-loader">
+          <div class="spinner"></div>
+          <span>Carregando...</span>
+        </div>
+      </div>
+      <div id="login-error"></div>
+      <div class="login-footer">
+        Ao continuar, você concorda com os<br>termos de uso do serviço.
+      </div>
+    </div>
+  </div>
+
+  <!-- ── App GAS em iframe (URL limpa na barra do navegador) ── -->
+  <!-- ⚠️  Substitua GAS_APP_URL pela URL do seu deploy Web App  -->
+  <iframe
+    id="app-frame"
+    src="GAS_APP_URL"
+    allow="storage-access"
+    title="DeliveryHub App"
+  ></iframe>
+
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script>
+    'use strict';
+
+    // ── Configuração ───────────────────────────────────────────
+    var CLIENT_ID  = '1043921571836-tdrbrq4rqn0a064jpt2r4gmallvqjb77.apps.googleusercontent.com';
+    var GAS_ORIGIN = 'https://script.google.com'; // origem dos postMessages vindos do iframe
+
+    // ── Referências ────────────────────────────────────────────
+    var overlay  = document.getElementById('login-overlay');
+    var frame    = document.getElementById('app-frame');
+    var errorEl  = document.getElementById('login-error');
+
+    // ── Ouve mensagens do GAS (iframe → parent) ────────────────
+    window.addEventListener('message', function(event) {
+      // Valida origem: aceita apenas script.google.com
+      if (typeof event.origin !== 'string' || event.origin.indexOf('script.google.com') === -1) return;
+
+      var msg = event.data;
+      if (!msg || typeof msg !== 'object' || !msg.type) return;
+
+      if (msg.type === 'need-login') {
+        showOverlay();
+        return;
+      }
+
+      if (msg.type === 'login-success') {
+        hideOverlay();
+        return;
+      }
+
+      if (msg.type === 'login-error') {
+        showError(msg.message || 'Erro ao autenticar. Tente novamente.');
+      }
+    });
+
+    // ── Callback do Google Sign-In ─────────────────────────────
+    function handleCredential(response) {
+      if (!response || !response.credential) {
+        showError('Login cancelado. Tente novamente.');
+        return;
+      }
+      hideError();
+      // Envia o JWT para o iframe via postMessage (sem expor na URL)
+      frame.contentWindow.postMessage(
+        { type: 'gtoken', credential: response.credential },
+        GAS_ORIGIN
+      );
+    }
+
+    // ── Inicializa GIS ────────────────────────────────────────
+    function initGIS() {
+      google.accounts.id.initialize({
+        client_id: CLIENT_ID,
+        callback: handleCredential,
+        auto_select: false,
+        cancel_on_tap_outside: true
+      });
+
+      google.accounts.id.renderButton(
+        document.getElementById('gis-button-wrap'),
+        {
+          theme: 'outline',
+          size: 'large',
+          shape: 'rectangular',
+          text: 'signin_with',
+          logo_alignment: 'left',
+          width: 280
+        }
+      );
+
+      document.getElementById('gis-loader').style.display = 'none';
+    }
+
+    // ── Utilitários de UI ─────────────────────────────────────
+    function showOverlay() { overlay.classList.remove('hidden'); }
+    function hideOverlay() { overlay.classList.add('hidden'); }
+
+    function showError(msg) {
+      errorEl.textContent = msg;
+      errorEl.style.display = 'block';
+    }
+    function hideError() {
+      errorEl.style.display = 'none';
+    }
+
+    // ── Boot: aguarda GIS carregar ────────────────────────────
+    window.addEventListener('load', function() {
+      if (typeof google !== 'undefined' && google.accounts) {
+        initGIS();
+        return;
+      }
+      var attempts = 0;
+      var interval = setInterval(function() {
+        attempts++;
+        if (typeof google !== 'undefined' && google.accounts) {
+          clearInterval(interval);
+          initGIS();
+        } else if (attempts >= 20) {
+          clearInterval(interval);
+          showError('Falha ao carregar o Google Sign-In. Verifique sua conexão e recarregue.');
+        }
+      }, 300);
+    });
+  </script>
+
+</body>
+</html>
