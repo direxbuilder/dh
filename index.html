@@ -80,7 +80,7 @@
     </div>
   </div>
 
-  <!-- iframe começa SEM src — carregado só após autenticação -->
+  <!-- iframe começa vazio — carregado só após autenticação (evita COOP) -->
   <iframe id="app-frame" src="about:blank" allow="storage-access" title="DeliveryHub App"></iframe>
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -89,77 +89,98 @@
 
     // ⚠️ Substitua pela URL do seu Web App GAS
     var GAS_APP_URL = 'https://script.google.com/macros/s/AKfycbwuBPwEq2gYfEk5O65JnSNRXU6fy54P3uSnWqRfsN0jaIKKUvPdIlyWPQUjg25bYQhHGg/exec';
-    var GAS_PARENT_ORIGIN = 'https://direxbuilder.github.io';
 
     var overlay = document.getElementById('login-overlay');
     var frame   = document.getElementById('app-frame');
 
-    // ── Ouve sinais do GAS (outgoing postMessage do iframe funciona normalmente) ──
+    // ── Ouve sinais vindos do GAS (iframe → parent) ───────────
     window.addEventListener('message', function(event) {
+      if (typeof event.origin !== 'string') return;
+
+      // Aceita googleusercontent.com (sandbox GAS) e script.google.com (dev mode)
+      var origin = event.origin;
+      if (origin.indexOf('googleusercontent.com') === -1 &&
+          origin.indexOf('script.google.com') === -1) return;
+
       var msg = event.data;
-      // Valida estrutura — só aceita tipos conhecidos da aplicação
       if (!msg || typeof msg !== 'object') return;
-      var knownTypes = ['login-success', 'need-login', 'login-error'];
-      if (knownTypes.indexOf(msg.type) === -1) return;
-    
-      if (msg.type === 'login-success') { hideOverlay(); return; }
-      if (msg.type === 'need-login')    { frame.src = 'about:blank'; showOverlay(); return; }
-      if (msg.type === 'login-error')   { showError(msg.message || 'Erro ao autenticar.'); }
+
+      if (msg.type === 'login-success') {
+        hideOverlay();
+        return;
+      }
+
+      if (msg.type === 'need-login') {
+        // Descarrega iframe antes de reabrir overlay — evita conflito COOP no próximo login
+        frame.src = 'about:blank';
+        showOverlay();
+        return;
+      }
+
+      if (msg.type === 'login-error') {
+        showError(msg.message || 'Erro ao autenticar. Tente novamente.');
+      }
     });
 
-    // ── Callback do GIS ──────────────────────────────────────
+    // ── Callback do GIS ───────────────────────────────────────
     function handleCredential(response) {
       if (!response || !response.credential) {
         showError('Login cancelado. Tente novamente.');
         return;
       }
       hideError();
-      // Token vai no src do iframe — invisível na barra do browser
+      // Token no src do iframe — nunca aparece na barra do browser
       frame.src = GAS_APP_URL + '?gtoken=' + encodeURIComponent(response.credential);
     }
 
-    // ── Inicializa GIS ───────────────────────────────────────
+    // ── Inicializa GIS ────────────────────────────────────────
     function initGIS() {
       google.accounts.id.initialize({
         client_id: '1043921571836-tdrbrq4rqn0a064jpt2r4gmallvqjb77.apps.googleusercontent.com',
         callback: handleCredential,
-        auto_select: true,          // dispara automaticamente para usuários recorrentes
+        auto_select: true,
         cancel_on_tap_outside: true
       });
 
       google.accounts.id.renderButton(
         document.getElementById('gis-button-wrap'),
-        { theme: 'outline', size: 'large', shape: 'rectangular',
-          text: 'signin_with', logo_alignment: 'left', width: 280 }
+        {
+          theme: 'outline', size: 'large', shape: 'rectangular',
+          text: 'signin_with', logo_alignment: 'left', width: 280
+        }
       );
 
-      // Fix: loader pode ter sido removido pelo renderButton
+      // renderButton substitui o conteúdo do container — guard antes de acessar loader
       var loader = document.getElementById('gis-loader');
       if (loader) loader.style.display = 'none';
     }
 
-    // ── UI helpers ───────────────────────────────────────────
+    // ── UI helpers ────────────────────────────────────────────
     function showOverlay() { overlay.classList.remove('hidden'); }
-    function hideOverlay() { overlay.classList.add('hidden');    }
+    function hideOverlay() { overlay.classList.add('hidden'); }
+
     function showError(msg) {
       var el = document.getElementById('login-error');
-      el.textContent = msg; el.style.display = 'block';
+      el.textContent = msg;
+      el.style.display = 'block';
     }
     function hideError() {
       var el = document.getElementById('login-error');
       el.style.display = 'none';
     }
 
-    // ── Boot ─────────────────────────────────────────────────
+    // ── Boot ──────────────────────────────────────────────────
     window.addEventListener('load', function() {
       if (typeof google !== 'undefined' && google.accounts) {
-        initGIS(); return;
+        initGIS();
+        return;
       }
       var attempts = 0;
       var interval = setInterval(function() {
         attempts++;
         if (typeof google !== 'undefined' && google.accounts) {
-          clearInterval(interval); initGIS();
+          clearInterval(interval);
+          initGIS();
         } else if (attempts >= 20) {
           clearInterval(interval);
           showError('Falha ao carregar o Google Sign-In. Verifique sua conexão.');
