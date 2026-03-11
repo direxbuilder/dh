@@ -96,28 +96,15 @@
 
     // ── Ouve sinais do GAS (outgoing postMessage do iframe funciona normalmente) ──
     window.addEventListener('message', function(event) {
-      if (typeof event.origin !== 'string') return;
-      if (event.origin.indexOf('googleusercontent.com') === -1 &&
-          event.origin.indexOf('script.google.com') === -1) return;
-
       var msg = event.data;
+      // Valida estrutura — só aceita tipos conhecidos da aplicação
       if (!msg || typeof msg !== 'object') return;
-
-      if (msg.type === 'login-success') {
-        hideOverlay();
-        return;
-      }
-
-      if (msg.type === 'need-login') {
-        // Descarrega o iframe antes de mostrar overlay — evita COOP no próximo login
-        frame.src = 'about:blank';
-        showOverlay();
-        return;
-      }
-
-      if (msg.type === 'login-error') {
-        showError(msg.message || 'Erro ao autenticar. Tente novamente.');
-      }
+      var knownTypes = ['login-success', 'need-login', 'login-error'];
+      if (knownTypes.indexOf(msg.type) === -1) return;
+    
+      if (msg.type === 'login-success') { hideOverlay(); return; }
+      if (msg.type === 'need-login')    { frame.src = 'about:blank'; showOverlay(); return; }
+      if (msg.type === 'login-error')   { showError(msg.message || 'Erro ao autenticar.'); }
     });
 
     // ── Callback do GIS ──────────────────────────────────────
