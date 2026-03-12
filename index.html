@@ -23,35 +23,21 @@
       box-shadow: 0 20px 60px rgba(0,0,0,0.2);
       text-align: center;
     }
-    .login-logo { font-size: 3rem; margin-bottom: 0.5rem; }
-    .login-title { font-weight: 700; font-size: 1.4rem; margin-bottom: 0.25rem; }
-    .login-subtitle { color: #6c757d; font-size: 0.9rem; margin-bottom: 1.75rem; }
-    .divider { border-top: 1px solid #e9ecef; margin: 1.5rem 0; }
-    #gis-button-wrap {
-      display: flex;
-      justify-content: center;
-      min-height: 44px;
+    .login-logo        { font-size: 3rem; margin-bottom: 0.5rem; }
+    .login-title       { font-weight: 700; font-size: 1.4rem; margin-bottom: 0.25rem; }
+    .login-subtitle    { color: #6c757d; font-size: 0.9rem; margin-bottom: 1.75rem; }
+    .divider           { border-top: 1px solid #e9ecef; margin: 1.5rem 0; }
+    #gis-button-wrap   { display: flex; justify-content: center; min-height: 44px; }
+    #gis-loader        { color: #6c757d; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem; }
+    #login-error       {
+      display: none; margin-top: 1rem; padding: 0.5rem 0.75rem;
+      background: #f8d7da; color: #842029;
+      border-radius: 0.5rem; font-size: 0.85rem;
     }
-    #gis-loader {
-      color: #6c757d;
-      font-size: 0.85rem;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    #login-error {
-      display: none;
-      margin-top: 1rem;
-      padding: 0.5rem 0.75rem;
-      background: #f8d7da;
-      color: #842029;
-      border-radius: 0.5rem;
-      font-size: 0.85rem;
-    }
-    .login-footer {
-      margin-top: 1.5rem;
-      font-size: 0.7rem;
-      color: #adb5bd;
+    .login-footer      { margin-top: 1.5rem; font-size: 0.7rem; color: #adb5bd; }
+    #mode-indicator    {
+      font-size: 0.72rem; color: #adb5bd;
+      margin-top: 0.5rem; min-height: 1rem;
     }
   </style>
 </head>
@@ -71,6 +57,9 @@
       </div>
     </div>
 
+    <!-- Indica ao usuário se está em modo popup ou redirect -->
+    <div id="mode-indicator"></div>
+
     <div id="login-error"></div>
 
     <div class="login-footer">
@@ -78,34 +67,47 @@
     </div>
   </div>
 
-  
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script>
-    
-    var CLIENT_ID  = '1043921571836-tdrbrq4rqn0a064jpt2r4gmallvqjb77.apps.googleusercontent.com';
+    // ─────────────────────────────────────────────────────────────────
+    // ⚙️  CONFIGURAÇÃO — ajuste antes do deploy
+    // ─────────────────────────────────────────────────────────────────
+    var CLIENT_ID   = '1043921571836-tdrbrq4rqn0a064jpt2r4gmallvqjb77.apps.googleusercontent.com';
     var GAS_APP_URL = 'https://script.google.com/macros/s/AKfycbwuBPwEq2gYfEk5O65JnSNRXU6fy54P3uSnWqRfsN0jaIKKUvPdIlyWPQUjg25bYQhHGg/exec';
+    // ─────────────────────────────────────────────────────────────────
+
+    // Detecta se foi aberto como popup (window.opener existe e é o app GAS)
+    var isPopup = !!(window.opener && !window.opener.closed);
 
     function initGIS() {
       google.accounts.id.initialize({
-        client_id: CLIENT_ID,
-        callback: handleCredential,
-        auto_select: false,
+        client_id:             CLIENT_ID,
+        callback:              handleCredential,
+        auto_select:           false,
         cancel_on_tap_outside: true
       });
 
       google.accounts.id.renderButton(
         document.getElementById('gis-button-wrap'),
         {
-          theme: 'outline',
-          size: 'large',
-          shape: 'rectangular',
-          text: 'signin_with',
-          logo_alignment: 'left',
-          width: 280
+          theme:           'outline',
+          size:            'large',
+          shape:           'rectangular',
+          text:            'signin_with',
+          logo_alignment:  'left',
+          width:           280
         }
       );
 
       document.getElementById('gis-loader').style.display = 'none';
+
+      // Indica modo ao usuário
+      var modeEl = document.getElementById('mode-indicator');
+      if (modeEl) {
+        modeEl.textContent = isPopup
+          ? '🔒 Janela segura de autenticação'
+          : '';
+      }
     }
 
     function handleCredential(response) {
@@ -113,8 +115,35 @@
         showError('Login cancelado. Tente novamente.');
         return;
       }
-      
-      window.location.href = GAS_APP_URL + '?gtoken=' + encodeURIComponent(response.credential);
+
+      var credential = response.credential;
+
+      if (isPopup && window.opener && !window.opener.closed) {
+        // ── Modo popup (principal) ──────────────────────────────────
+        // Envia credential ao GAS iframe via postMessage.
+        // O GAS chama verifyGoogleToken() e fecha o popup após sucesso.
+        //
+        // targetOrigin '*': o GAS não tem domínio fixo (googleusercontent.com
+        // gera subdomínios dinâmicos). O receptor valida event.origin antes
+        // de processar — segurança mantida no lado receptor.
+        try {
+          window.opener.postMessage({ type: 'GIS_AUTH', credential: credential }, '*');
+          // Pequeno delay para garantir entrega antes de fechar
+          setTimeout(function() { window.close(); }, 400);
+        } catch (err) {
+          // Falha inesperada no postMessage — fallback para redirect
+          _fazerRedirect(credential);
+        }
+      } else {
+        // ── Modo redirect (fallback) ────────────────────────────────
+        // Popup foi bloqueado ou contexto perdeu o opener.
+        // Redireciona de volta ao GAS com o JWT como ?gtoken=
+        _fazerRedirect(credential);
+      }
+    }
+
+    function _fazerRedirect(credential) {
+      window.location.href = GAS_APP_URL + '?gtoken=' + encodeURIComponent(credential);
     }
 
     function showError(msg) {
@@ -123,7 +152,7 @@
       el.style.display = 'block';
     }
 
-    // inicializar
+    // ── Inicialização com retry ─────────────────────────────────────
     window.addEventListener('load', function() {
       if (typeof google !== 'undefined' && google.accounts) {
         initGIS();
