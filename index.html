@@ -3,191 +3,143 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DeliveryHub</title>
+  <title>DeliveryHub — Login</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { height: 100%; overflow: hidden; background: #f8f9fa; }
-
-    #app-frame {
-      width: 100%; height: 100%;
-      border: none; display: block;
-    }
-
-    #login-overlay {
-      position: fixed; inset: 0;
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       background: linear-gradient(135deg, #FF6B35 0%, #c0392b 100%);
-      display: flex; align-items: center; justify-content: center;
-      z-index: 9999;
-      opacity: 1; transition: opacity 0.35s ease;
+      font-family: 'Segoe UI', sans-serif;
     }
-    #login-overlay.hidden { opacity: 0; pointer-events: none; }
-
     .login-card {
-      background: #fff; border-radius: 1.25rem;
-      padding: 2.5rem 2rem; width: 100%; max-width: 380px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.25); text-align: center;
+      background: #fff;
+      border-radius: 1.25rem;
+      padding: 2.5rem 2rem;
+      width: 100%;
+      max-width: 380px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+      text-align: center;
     }
-    .login-logo     { font-size: 3rem; margin-bottom: 0.5rem; }
-    .login-title    { font-weight: 700; font-size: 1.4rem; margin-bottom: 0.25rem; color: #212529; }
+    .login-logo { font-size: 3rem; margin-bottom: 0.5rem; }
+    .login-title { font-weight: 700; font-size: 1.4rem; margin-bottom: 0.25rem; }
     .login-subtitle { color: #6c757d; font-size: 0.9rem; margin-bottom: 1.75rem; }
-    .divider        { border-top: 1px solid #e9ecef; margin: 1.5rem 0; }
-
+    .divider { border-top: 1px solid #e9ecef; margin: 1.5rem 0; }
     #gis-button-wrap {
-      display: flex; justify-content: center;
-      min-height: 44px; align-items: center;
+      display: flex;
+      justify-content: center;
+      min-height: 44px;
     }
     #gis-loader {
-      color: #6c757d; font-size: 0.85rem;
-      display: flex; align-items: center; gap: 0.5rem;
+      color: #6c757d;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
     }
-    .spinner {
-      width: 16px; height: 16px;
-      border: 2px solid #dee2e6; border-top-color: #6c757d;
-      border-radius: 50%; animation: spin 0.6s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
     #login-error {
-      display: none; margin-top: 1rem;
+      display: none;
+      margin-top: 1rem;
       padding: 0.5rem 0.75rem;
-      background: #f8d7da; color: #842029;
-      border-radius: 0.5rem; font-size: 0.85rem;
+      background: #f8d7da;
+      color: #842029;
+      border-radius: 0.5rem;
+      font-size: 0.85rem;
     }
     .login-footer {
-      margin-top: 1.5rem; font-size: 0.7rem;
-      color: #adb5bd; line-height: 1.5;
+      margin-top: 1.5rem;
+      font-size: 0.7rem;
+      color: #adb5bd;
     }
   </style>
 </head>
 <body>
 
-  <div id="login-overlay">
-    <div class="login-card">
-      <div class="login-logo">🛵</div>
-      <div class="login-title">DeliveryHub</div>
-      <div class="login-subtitle">Faça login para continuar</div>
-      <div class="divider"></div>
-      <div id="gis-button-wrap">
-        <div id="gis-loader">
-          <div class="spinner"></div>
-          <span>Carregando...</span>
-        </div>
+  <div class="login-card">
+    <div class="login-logo">🛵</div>
+    <div class="login-title">DeliveryHub</div>
+    <div class="login-subtitle">Faça login para continuar</div>
+
+    <div class="divider"></div>
+
+    <div id="gis-button-wrap">
+      <div id="gis-loader">
+        <div class="spinner-border spinner-border-sm text-secondary" role="status"></div>
+        <span>Carregando...</span>
       </div>
-      <div id="login-error"></div>
-      <div class="login-footer">
-        Ao continuar, você concorda com os<br>termos de uso do serviço.
-      </div>
+    </div>
+
+    <div id="login-error"></div>
+
+    <div class="login-footer">
+      Ao continuar, você concorda com os termos de uso do serviço.
     </div>
   </div>
 
-  <!-- iframe começa vazio — carregado só após autenticação (evita COOP) -->
-  <iframe id="app-frame" src="about:blank" allow="storage-access" title="DeliveryHub App"></iframe>
-
+  
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script>
-    'use strict';
-
-    // ⚠️ Substitua pela URL do seu Web App GAS
+    
+    var CLIENT_ID  = '1043921571836-tdrbrq4rqn0a064jpt2r4gmallvqjb77.apps.googleusercontent.com';
     var GAS_APP_URL = 'https://script.google.com/macros/s/AKfycbwuBPwEq2gYfEk5O65JnSNRXU6fy54P3uSnWqRfsN0jaIKKUvPdIlyWPQUjg25bYQhHGg/exec';
 
-    var overlay = document.getElementById('login-overlay');
-    var frame   = document.getElementById('app-frame');
-
-    // ── Ouve sinais vindos do GAS (iframe → parent) ───────────
-    window.addEventListener('message', function(event) {
-      if (typeof event.origin !== 'string') return;
-
-      // Aceita googleusercontent.com (sandbox GAS) e script.google.com (dev mode)
-      var origin = event.origin;
-      if (origin.indexOf('googleusercontent.com') === -1 &&
-          origin.indexOf('script.google.com') === -1) return;
-
-      var msg = event.data;
-      if (!msg || typeof msg !== 'object') return;
-
-      if (msg.type === 'login-success') {
-        hideOverlay();
-        return;
-      }
-
-      if (msg.type === 'need-login') {
-        // Descarrega iframe antes de reabrir overlay — evita conflito COOP no próximo login
-        frame.src = 'about:blank';
-        showOverlay();
-        return;
-      }
-
-      if (msg.type === 'login-error') {
-        showError(msg.message || 'Erro ao autenticar. Tente novamente.');
-      }
-    });
-
-    // ── Callback do GIS ───────────────────────────────────────
-
-    function handleCredential(response) {
-      if (!response || !response.credential) {
-        showError('Login cancelado. Tente novamente.');
-        return;
-      }
-      var iframe = document.createElement('iframe');
-      iframe.src = GAS_APP_URL + '?gtoken=' + encodeURIComponent(response.credential);
-      iframe.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;border:none;z-index:9999;';
-      document.body.appendChild(iframe);
-    }
-
-    // ── Inicializa GIS ────────────────────────────────────────
     function initGIS() {
       google.accounts.id.initialize({
-        client_id: '1043921571836-tdrbrq4rqn0a064jpt2r4gmallvqjb77.apps.googleusercontent.com',
+        client_id: CLIENT_ID,
         callback: handleCredential,
-        auto_select: true,
+        auto_select: false,
         cancel_on_tap_outside: true
       });
 
       google.accounts.id.renderButton(
         document.getElementById('gis-button-wrap'),
         {
-          theme: 'outline', size: 'large', shape: 'rectangular',
-          text: 'signin_with', logo_alignment: 'left', width: 280
+          theme: 'outline',
+          size: 'large',
+          shape: 'rectangular',
+          text: 'signin_with',
+          logo_alignment: 'left',
+          width: 280
         }
       );
 
-      // renderButton substitui o conteúdo do container — guard antes de acessar loader
-      var loader = document.getElementById('gis-loader');
-      if (loader) loader.style.display = 'none';
+      document.getElementById('gis-loader').style.display = 'none';
     }
 
-    // ── UI helpers ────────────────────────────────────────────
-    function showOverlay() { overlay.classList.remove('hidden'); }
-    function hideOverlay() { overlay.classList.add('hidden'); }
+    function handleCredential(response) {
+      if (!response || !response.credential) {
+        showError('Login cancelado. Tente novamente.');
+        return;
+      }
+      
+      window.location.href = GAS_APP_URL + '?gtoken=' + encodeURIComponent(response.credential);
+    }
 
     function showError(msg) {
       var el = document.getElementById('login-error');
       el.textContent = msg;
       el.style.display = 'block';
     }
-    function hideError() {
-      var el = document.getElementById('login-error');
-      el.style.display = 'none';
-    }
 
-    // ── Boot ──────────────────────────────────────────────────
+    // inicializar
     window.addEventListener('load', function() {
       if (typeof google !== 'undefined' && google.accounts) {
         initGIS();
-        return;
+      } else {
+        var attempts = 0;
+        var interval = setInterval(function() {
+          attempts++;
+          if (typeof google !== 'undefined' && google.accounts) {
+            clearInterval(interval);
+            initGIS();
+          } else if (attempts >= 15) {
+            clearInterval(interval);
+            showError('Falha ao carregar o Google Sign-In. Verifique sua conexão e recarregue.');
+          }
+        }, 300);
       }
-      var attempts = 0;
-      var interval = setInterval(function() {
-        attempts++;
-        if (typeof google !== 'undefined' && google.accounts) {
-          clearInterval(interval);
-          initGIS();
-        } else if (attempts >= 20) {
-          clearInterval(interval);
-          showError('Falha ao carregar o Google Sign-In. Verifique sua conexão.');
-        }
-      }, 300);
     });
   </script>
 
