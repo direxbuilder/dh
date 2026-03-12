@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeliveryHub</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; overflow: hidden; }
+    #gas-frame {
+      width: 100%;
+      height: 100vh;
+      border: none;
+      display: block;
+    }
+    /* Loader enquanto o iframe ainda não carregou */
+    #frame-loader {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #FF6B35 0%, #c0392b 100%);
+      color: #fff; font-family: 'Segoe UI', sans-serif;
+      z-index: 10;
+      transition: opacity 0.3s;
+    }
+    #frame-loader.hidden { opacity: 0; pointer-events: none; }
+    #frame-loader .logo  { font-size: 3rem; margin-bottom: 1rem; }
+    #frame-loader p      { font-size: 0.9rem; opacity: 0.8; margin-top: 0.5rem; }
+    .spinner {
+      width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.3);
+      border-top-color: #fff; border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+  <!-- Loader visível enquanto o iframe carrega -->
+  <div id="frame-loader">
+    <div class="logo">🛵</div>
+    <div class="spinner"></div>
+    <p>Carregando DeliveryHub...</p>
+  </div>
+
+  <!-- O src é definido pelo script abaixo — nunca hardcode aqui -->
+  <iframe id="gas-frame" allow="popup" title="DeliveryHub"></iframe>
+
+  <script>
+    (function() {
+      'use strict';
+
+      // ─────────────────────────────────────────────────────────────
+      // ⚙️  CONFIGURAÇÃO — ajuste antes do deploy
+      // ─────────────────────────────────────────────────────────────
+      var GAS_BASE_URL = 'https://script.google.com/macros/s/AKfycbwuBPwEq2gYfEk5O65JnSNRXU6fy54P3uSnWqRfsN0jaIKKUvPdIlyWPQUjg25bYQhHGg/exec';
+      var STORAGE_KEY  = 'dh_session_v1'; // versionar a key facilita migrações futuras
+      // ─────────────────────────────────────────────────────────────
+
+      var iframe  = document.getElementById('gas-frame');
+      var loader  = document.getElementById('frame-loader');
+
+      // ── Gerenciamento de sessão (first-party localStorage) ────────
+      //
+      // O GAS roda em origem 3rd-party (googleusercontent.com), então
+      // seu sessionStorage pode ser bloqueado em Safari / Chrome hardened.
+      // Aqui armazenamos o token GAS + dados do usuário no localStorage
+      // desta página (first-party) e os injetamos via query params no
+      // src do iframe sempre que ele precisar recarregar.
+      //
+      // Fluxo:
+      //   1. Carrega iframe sem params → GAS detecta sem sessão → View_Login
+      //   2. Usuário faz login → GAS envia DH_AUTH_SUCCESS com {token, user}
+      //   3. Parent salva no localStorage → recarrega iframe com ?rt=&ru=
+      //   4. GAS restaura sessão sem passar pela tela de login
+      //   5. Logout → GAS envia DH_LOGOUT → parent limpa storage → recarrega
+
+      function carregarSessaoSalva() {
+        try {
+          var raw = localStorage.getItem(STORAGE_KEY);
+          return raw ? JSON.parse(raw) : null;
+        } catch (e) { return null; }
+      }
+
+      function salvarSessao(token, user) {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({ token: token, user: user }));
+        } catch (e) { /* quota exceeded — ignora */ }
+      }
+
+      function limparSessao() {
+        try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* ignora */ }
+      }
+
+      function montarUrlIframe(sessao) {
+        if (!sessao || !sessao.token) return GAS_BASE_URL;
+        // Codifica user como base64 (JSON → btoa) para passar via query param
+        // encodeURIComponent garante que '+' e '=' do base64 não quebrem a URL
+        var userB64 = encodeURIComponent(btoa(JSON.stringify(sessao.user || {})));
+        return GAS_BASE_URL
+          + '?rt=' + encodeURIComponent(sessao.token)
+          + '&ru=' + userB64;
+      }
+
+      function carregarIframe(recarregar) {
+        var sessao = carregarSessaoSalva();
+        var url    = montarUrlIframe(sessao);
+
+        if (recarregar) {
+          // Força reload completo do iframe com nova URL
+          iframe.src = 'about:blank';
+          setTimeout(function() { iframe.src = url; }, 50);
+        } else {
+          iframe.src = url;
+        }
+      }
+
+      // ── Listener de mensagens do GAS iframe ───────────────────────
+      window.addEventListener('message', function(event) {
+        // Aceita apenas mensagens vindas de origens Google
+        // (o subdomínio exato é dinâmico, então verificamos o sufixo)
+        var origem = event.origin || '';
+        var origemPermitida = (
+          origem.indexOf('script.google.com') !== -1 ||
+          origem.indexOf('googleusercontent.com') !== -1
+        );
+        if (!origemPermitida) return;
+        if (!event.data || typeof event.data.type !== 'string') return;
+
+        switch (event.data.type) {
+
+          case 'DH_AUTH_SUCCESS':
+            // GAS autenticou com sucesso — salva token + user no localStorage
+            if (event.data.token && event.data.user) {
+              salvarSessao(event.data.token, event.data.user);
+              // Recarrega o iframe já com a sessão injetada.
+              // Isso garante que um F5 subsequente não passe pelo login.
+              carregarIframe(true);
+            }
+            break;
+
+          case 'DH_LOGOUT':
+            // Usuário fez logout no GAS — limpa sessão e recarrega sem token
+            limparSessao();
+            carregarIframe(true);
+            break;
+        }
+      });
+
+      // ── Ocultar loader quando iframe terminar de carregar ─────────
+      iframe.addEventListener('load', function() {
+        // Pequeno delay evita flash branco entre loader e iframe
+        setTimeout(function() {
+          if (loader) loader.classList.add('hidden');
+        }, 200);
+      });
+
+      // ── Inicialização ─────────────────────────────────────────────
+      carregarIframe(false);
+
+    })();
+  </script>
+
+</body>
+</html>
